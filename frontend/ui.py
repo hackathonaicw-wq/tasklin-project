@@ -2,69 +2,115 @@ import streamlit as st
 import requests
 
 # 1. Page Configuration
-st.set_page_config(
-    page_title="HackTracker 2026",
-    page_icon="📅",
-    layout="wide"
-)
+st.set_page_config(page_title="HackTracker 2026", page_icon="🚀", layout="wide")
 
-# 2. Styling (Hiding the default Streamlit footer)
-hide_style = """
-    <style>
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
-    </style>
-"""
-st.markdown(hide_style, unsafe_allow_html=True)
+# 2. Session State Logic
+if 'logged_in' not in st.session_state:
+    st.session_state['logged_in'] = False
+if 'page' not in st.session_state:
+    st.session_state['page'] = 'home'
+if 'username' not in st.session_state:
+    st.session_state['username'] = ""
 
-# 3. Header Section
-st.title("📅 Upcoming Hackathons 2026")
-st.markdown("Fetching the best engineering challenges live from Google.")
-st.divider()
+# API URL
+API_URL = "http://127.0.0.1:8000/api"
 
-# 4. Connection to Flask Backend
-# Make sure your app.py is running on port 5000!
-BACKEND_URL = "http://127.0.0.1:5000/api/hackathons"
+# --- NAVIGATION HEADER ---
+def render_header():
+    col_l, col_m, col_r = st.columns([1, 4, 1.5])
+    
+    with col_l:
+        if st.button("🏠 Home", use_container_width=True):
+            st.session_state['page'] = 'home'
+            st.rerun()
 
-def fetch_data():
+    with col_r:
+        if not st.session_state['logged_in']:
+            # The single Login/Signup button you requested
+            if st.button("🔑 Login / Signup", use_container_width=True):
+                st.session_state['page'] = 'login'
+                st.rerun()
+        else:
+            u_col, out_col = st.columns([2, 1])
+            u_col.write(f"👤 **{st.session_state['username']}**")
+            if out_col.button("Logout"):
+                st.session_state['logged_in'] = False
+                st.session_state['page'] = 'home'
+                st.rerun()
+    st.divider()
+
+# --- LOGIN PAGE ---
+def show_login():
+    st.header("🔐 Login")
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
+    
+    if st.button("Login Now", use_container_width=True):
+        try:
+            res = requests.post(f"{API_URL}/login", json={"username": username, "password": password})
+            if res.status_code == 200:
+                st.session_state['logged_in'] = True
+                st.session_state['username'] = username
+                st.session_state['page'] = 'home'
+                st.rerun()
+            else:
+                st.error("Invalid credentials.")
+        except:
+            st.error("Backend offline.")
+
+    st.write("---")
+    st.write("Don't have an account?")
+    if st.button("Create a New Account (Sign Up)"):
+        st.session_state['page'] = 'signup'
+        st.rerun()
+
+# --- SIGNUP PAGE ---
+def show_signup():
+    st.header("📝 Sign Up")
+    new_user = st.text_input("Choose Username")
+    new_pwd = st.text_input("Choose Password", type="password")
+    
+    if st.button("Register Account", use_container_width=True):
+        try:
+            res = requests.post(f"{API_URL}/signup", json={"username": new_user, "password": new_pwd})
+            if res.status_code == 201:
+                st.success("Account created successfully!")
+                st.info("Now go to the Login page to enter your dashboard.")
+            else:
+                st.error("Username already taken.")
+        except:
+            st.error("Backend offline.")
+            
+    if st.button("← Back to Login"):
+        st.session_state['page'] = 'login'
+        st.rerun()
+
+# --- DASHBOARD / HOME ---
+def show_home():
+    st.title("🚀 Upcoming Hackathons 2026")
     try:
-        response = requests.get(BACKEND_URL)
-        if response.status_code == 200:
-            return response.json()
-        return []
-    except:
-        return None
-
-# 5. Main UI Logic
-hackathons = fetch_data()
-
-if hackathons is None:
-    st.error("❌ Cannot connect to the Backend. Please run 'python app.py' in your terminal.")
-elif len(hackathons) == 0:
-    st.warning("⚠️ No hackathons found. Make sure you've run 'python fetch.py' to populate the database.")
-else:
-    # Sidebar Search
-    st.sidebar.header("Filter Results")
-    search = st.sidebar.text_input("Search by Keyword (e.g. AI, India)")
-
-    # Display Hackathons
-    for h in hackathons:
-        # Filter logic
-        if search.lower() in h['title'].lower() or search.lower() in h['date'].lower():
+        res = requests.get(f"{API_URL}/hackathons").json()
+        if not res:
+            st.info("No hackathons found. Make sure to run fetch.py!")
+        for h in res:
             with st.container():
-                col1, col2 = st.columns([4, 1])
-                
-                with col1:
+                c1, c2 = st.columns([4, 1])
+                with c1:
                     st.subheader(h['title'])
-                    st.write(f"📍 **Location:** {h['location']}")
-                    st.write(f"🕒 **Details:** {h['date']}")
-                
-                with col2:
-                    st.write("##") # Spacing
-                    st.link_button("View Original Search", h['link'], use_container_width=True)
-                
+                    st.write(f"📅 {h.get('date', 'TBA')} | 📍 {h.get('location', 'India')}")
+                with c2:
+                    st.write("##")
+                    st.link_button("View Details", h['link'])
                 st.divider()
+    except:
+        st.error("Could not connect to Backend.")
 
-# 6. Sidebar Refresh Button
-if st.sidebar.button("🔄 Refresh Page"):
-    st.rerun()
+# --- ROUTING LOGIC ---
+render_header()
+
+if st.session_state['page'] == 'login':
+    show_login()
+elif st.session_state['page'] == 'signup':
+    show_signup()
+else:
+    show_home()
