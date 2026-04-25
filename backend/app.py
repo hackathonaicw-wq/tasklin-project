@@ -7,7 +7,6 @@ import json
 app = Flask(__name__)
 CORS(app)
 
-# ── Database setup ─────────────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, 'hackathons.db')
 
@@ -17,12 +16,18 @@ def get_db_connection():
     return conn
 
 def setup_database():
+    """Initializes tables for TASKLIN."""
     conn = get_db_connection()
     conn.execute('''CREATE TABLE IF NOT EXISTS users 
                     (id INTEGER PRIMARY KEY AUTOINCREMENT, 
                      username TEXT UNIQUE, 
-                     password TEXT)''')
-
+                     password TEXT,
+                     full_name TEXT,
+                     dob TEXT,
+                     email TEXT,
+                     gender TEXT,
+                     college TEXT,
+                     skills TEXT)''')
     conn.execute('''CREATE TABLE IF NOT EXISTS hackathons 
                     (id INTEGER PRIMARY KEY AUTOINCREMENT, 
                      title TEXT, link TEXT, location TEXT, date TEXT)''')
@@ -49,6 +54,7 @@ def register_user():
 
 @app.route('/api/login', methods=['POST'])
 def authenticate_user():
+    """Checks credentials and returns full user data."""
     data = request.json
     conn = get_db_connection()
     user = conn.execute(
@@ -58,11 +64,26 @@ def authenticate_user():
     conn.close()
 
     if user:
-        return jsonify({"result": "success", "user": user['username']}), 200
+        return jsonify({"result": "success", "user": dict(user)}), 200
     return jsonify({"result": "failed"}), 401
 
+@app.route('/api/update_profile', methods=['POST'])
+def update_profile():
+    """Updates profile details in the database."""
+    data = request.json
+    try:
+        conn = get_db_connection()
+        conn.execute('''UPDATE users 
+                        SET full_name=?, dob=?, email=?, gender=?, college=?, skills=? 
+                        WHERE username=?''', 
+                     (data['full_name'], data['dob'], data['email'], 
+                      data['gender'], data['college'], data['skills'], data['username']))
+        conn.commit()
+        conn.close()
+        return jsonify({"result": "success"}), 200
+    except Exception as e:
+        return jsonify({"result": "error", "message": str(e)}), 500
 
-# ── Hackathon API ─────────────────────────────────────────────
 @app.route('/api/hackathons', methods=['GET'])
 def fetch_stored_hackathons():
     conn = get_db_connection()
@@ -104,5 +125,5 @@ def add_user():
 
 # ── Run server ─────────────────────────────────────────────
 if __name__ == '__main__':
-    print("🚀 BACKEND STARTING ON PORT 8000...")
+    print("🚀 TASKLIN BACKEND STARTING ON PORT 8000...")
     app.run(debug=True, port=8000)
