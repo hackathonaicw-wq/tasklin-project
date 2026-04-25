@@ -1,116 +1,124 @@
 import streamlit as st
 import requests
 
-# 1. Page Configuration
-st.set_page_config(page_title="HackTracker 2026", page_icon="🚀", layout="wide")
+st.set_page_config(page_title="Tasklin", layout="wide")
 
-# 2. Session State Logic
-if 'logged_in' not in st.session_state:
-    st.session_state['logged_in'] = False
-if 'page' not in st.session_state:
-    st.session_state['page'] = 'home'
-if 'username' not in st.session_state:
-    st.session_state['username'] = ""
+API_URL = "http://127.0.0.1:8000"
 
-# API URL
-API_URL = "http://127.0.0.1:8000/api"
+st.title("🚀 Tasklin - Hackathon Finder")
 
-# --- NAVIGATION HEADER ---
-def render_header():
-    col_l, col_m, col_r = st.columns([1, 4, 1.5])
-    
-    with col_l:
-        if st.button("🏠 Home", use_container_width=True):
-            st.session_state['page'] = 'home'
-            st.rerun()
+# --- Hackathons Section ---
+st.header("📢 Hackathons")
 
-    with col_r:
-        if not st.session_state['logged_in']:
-            # The single Login/Signup button you requested
-            if st.button("🔑 Login / Signup", use_container_width=True):
-                st.session_state['page'] = 'login'
-                st.rerun()
-        else:
-            u_col, out_col = st.columns([2, 1])
-            u_col.write(f"👤 **{st.session_state['username']}**")
-            if out_col.button("Logout"):
-                st.session_state['logged_in'] = False
-                st.session_state['page'] = 'home'
-                st.rerun()
-    st.divider()
+# Fetch hackathons with loading spinner
+try:
+    with st.spinner("Loading hackathons..."):
+        hackathons = requests.get(f"{API_URL}/api/hackathons").json()
+except:
+    st.error("Backend not running")
+    hackathons = []
 
-# --- LOGIN PAGE ---
-def show_login():
-    st.header("🔐 Login")
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
-    
-    if st.button("Login Now", use_container_width=True):
-        try:
-            res = requests.post(f"{API_URL}/login", json={"username": username, "password": password})
-            if res.status_code == 200:
-                st.session_state['logged_in'] = True
-                st.session_state['username'] = username
-                st.session_state['page'] = 'home'
-                st.rerun()
-            else:
-                st.error("Invalid credentials.")
-        except:
-            st.error("Backend offline.")
+# Search input
+search = st.text_input("Search Hackathons").lower()
 
-    st.write("---")
-    st.write("Don't have an account?")
-    if st.button("Create a New Account (Sign Up)"):
-        st.session_state['page'] = 'signup'
-        st.rerun()
+# Highlight search
+if search:
+    st.markdown(f"### 🔍 Results for: `{search}`")
 
-# --- SIGNUP PAGE ---
-def show_signup():
-    st.header("📝 Sign Up")
-    new_user = st.text_input("Choose Username")
-    new_pwd = st.text_input("Choose Password", type="password")
-    
-    if st.button("Register Account", use_container_width=True):
-        try:
-            res = requests.post(f"{API_URL}/signup", json={"username": new_user, "password": new_pwd})
-            if res.status_code == 201:
-                st.success("Account created successfully!")
-                st.info("Now go to the Login page to enter your dashboard.")
-            else:
-                st.error("Username already taken.")
-        except:
-            st.error("Backend offline.")
-            
-    if st.button("← Back to Login"):
-        st.session_state['page'] = 'login'
-        st.rerun()
+found = False
 
-# --- DASHBOARD / HOME ---
-def show_home():
-    st.title("🚀 Upcoming Hackathons 2026")
-    try:
-        res = requests.get(f"{API_URL}/hackathons").json()
-        if not res:
-            st.info("No hackathons found. Make sure to run fetch.py!")
-        for h in res:
-            with st.container():
-                c1, c2 = st.columns([4, 1])
-                with c1:
-                    st.subheader(h['title'])
-                    st.write(f"📅 {h.get('date', 'TBA')} | 📍 {h.get('location', 'India')}")
-                with c2:
-                    st.write("##")
-                    st.link_button("View Details", h['link'])
-                st.divider()
-    except:
-        st.error("Could not connect to Backend.")
-
-# --- ROUTING LOGIC ---
-render_header()
-
-if st.session_state['page'] == 'login':
-    show_login()
-elif st.session_state['page'] == 'signup':
-    show_signup()
+# Display hackathons
+if not hackathons:
+    st.warning("⚠️ No hackathons available right now.")
 else:
-    show_home()
+    for h in hackathons:
+        title = h.get("title", "").lower()
+        location = h.get("location", "").lower()
+        date = h.get("date", "").lower()
+
+        keywords = title + " " + location + " " + date
+        search_words = search.split()
+
+        if search == "" or any(word in keywords for word in search_words):
+            found = True
+
+            with st.container():
+                st.subheader(h.get("title", "No Title"))
+
+                st.markdown(f"📍 **Location:** {h.get('location', 'N/A')}")
+                st.markdown(f"📅 **Date:** {h.get('date', 'N/A')}")
+
+                # Smart tags
+                if "ai" in keywords:
+                    st.caption("🤖 AI")
+                if "web" in keywords:
+                    st.caption("🌐 Web")
+                if "data" in keywords:
+                    st.caption("📊 Data")
+
+                if h.get("link"):
+                    st.link_button("🔗 View Hackathon", h["link"])
+
+                st.divider()
+
+# No match case
+if hackathons and not found:
+    st.warning("No matching hackathons found")
+
+# Divider before next section
+st.divider()
+
+# ── Teammate Finder ────────────────────────────────
+st.header("🤝 Teammate Finder")
+
+name = st.text_input("Name")
+skills = st.text_input("Skills (comma separated)")
+looking_for = st.text_input("Looking For")
+contact = st.text_input("Contact")
+
+# Input validation
+if st.button("Add Profile"):
+    if not name or not skills or not contact:
+        st.error("Please fill all required fields")
+    else:
+        requests.post(f"{API_URL}/add_user", json={
+            "name": name,
+            "skills": skills.split(","),
+            "looking_for": looking_for.split(","),
+            "contact": contact
+        })
+        st.success("Profile Added!")
+
+st.subheader("Available Teammates")
+
+try:
+    users = requests.get(f"{API_URL}/users").json()
+except:
+    users = []
+
+your_skills = st.text_input("Enter your skills (comma separated)")
+
+if your_skills:
+    your_skills_list = [s.strip().lower() for s in your_skills.split(",")]
+else:
+    your_skills_list = []
+
+for u in users:
+    user_skills = [s.lower() for s in u["skills"]]
+
+    match = any(skill in user_skills for skill in your_skills_list)
+
+    if your_skills_list == [] or match:
+        st.markdown(f"### 👤 {u['name']}")
+        st.markdown(f"🧠 **Skills:** {', '.join(u['skills'])}")
+        st.markdown(f"🎯 **Looking For:** {', '.join(u['looking_for'])}")
+        st.markdown(f"📞 **Contact:** {u['contact']}")
+
+        if match:
+            st.success("✅ Good Match")
+
+        st.divider()
+
+# Footer
+st.markdown("---")
+st.caption("Built with ❤️ using Streamlit & Flask")
