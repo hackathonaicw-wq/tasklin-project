@@ -1,47 +1,31 @@
-from flask import Flask, jsonify, request
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 import sqlite3
-import os
-import uuid
 
 app = Flask(__name__)
 CORS(app)
 
+DB = "tasklin.db"
 
-# ───────────── DATABASE ─────────────
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "tasklin.db")
-
+# ---------------- DB ----------------
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return sqlite3.connect(DB, check_same_thread=False)
 
-
-
-# ───────────── SETUP ─────────────
-def setup():
+def init_db():
     conn = get_db()
+    cursor = conn.cursor()
 
     # USERS
-    conn.execute("""
+    cursor.execute("""
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE,
-        password TEXT,
-        full_name TEXT,
-        email TEXT,
-        college TEXT,
-        skills TEXT,
-        bio TEXT,
-        resume TEXT,
-        share_id TEXT
+        password TEXT
     )
     """)
 
     # CERTIFICATES
-    conn.execute("""
+    cursor.execute("""
     CREATE TABLE IF NOT EXISTS certificates (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT,
@@ -50,268 +34,197 @@ def setup():
     )
     """)
 
-    # HACKATHONS
-    conn.execute("""
-    CREATE TABLE IF NOT EXISTS hackathons (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        title TEXT,
-        location TEXT,
-        date TEXT,
-        link TEXT
-    )
-    """)
-
-    # WAITING ROOM
-    conn.execute("""
-    CREATE TABLE IF NOT EXISTS waiting_room (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        hackathon_id INTEGER,
-        username TEXT,
+    # PROFILE
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS profiles (
+        username TEXT PRIMARY KEY,
+        name TEXT,
+        email TEXT,
+        college TEXT,
         skills TEXT,
-        team_size INTEGER
+        bio TEXT
     )
     """)
-
-    # INSERT SAMPLE DATA (ONLY ONCE)
-    count = conn.execute("SELECT COUNT(*) FROM hackathons").fetchone()[0]
-
-    if count == 0:
-        conn.execute("""
-        INSERT INTO hackathons (title, location, date, link)
-        VALUES 
-        ('Goldman Sachs India Hackathon 2026', 'India/Online',
-         'Registrations Open: April 22 - May 10',
-         'https://www.goldmansachs.com'),
-
-        ('Energize India Hackathon 2026', 'India/Online',
-         'March - April 2026',
-         'https://myevents.3ds.com')
-        """)
-
-
-def setup_database():
-    """Initializes tables for TASKLIN."""
-    conn = get_db_connection()
-    conn.execute('''CREATE TABLE IF NOT EXISTS users 
-                    (id INTEGER PRIMARY KEY AUTOINCREMENT, 
-                     username TEXT UNIQUE, 
-                     password TEXT,
-                     full_name TEXT,
-                     dob TEXT,
-                     email TEXT,
-                     gender TEXT,
-                     college TEXT,
-                     skills TEXT)''')
-    conn.execute('''CREATE TABLE IF NOT EXISTS hackathons 
-                    (id INTEGER PRIMARY KEY AUTOINCREMENT, 
-                     title TEXT, link TEXT, location TEXT, date TEXT)''')
 
     conn.commit()
     conn.close()
 
-setup()
+init_db()
 
-# ───────────── AUTH ─────────────
+# ---------------- WAITING ROOM ----------------
+waiting_rooms = {}
+
+# ---------------- AUTH ----------------
 @app.route("/api/signup", methods=["POST"])
 def signup():
     data = request.json
-    conn = get_db()
-
     try:
-        conn.execute("""
-        INSERT INTO users (username, password, share_id)
-        VALUES (?, ?, ?)
-        """, (data["username"], data["password"], str(uuid.uuid4())))
-
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO users (username, password) VALUES (?, ?)",
+            (data["username"], data["password"])
+        )
         conn.commit()
-        return jsonify({"status": "success"})
+        return jsonify({"msg": "signup success"})
     except:
-        return jsonify({"status": "error", "msg": "User exists"})
-
+        return jsonify({"msg": "user exists"}), 400
 
 
 @app.route("/api/login", methods=["POST"])
 def login():
-
-@app.route('/api/login', methods=['POST'])
-def authenticate_user():
-    """Checks credentials and returns full user data."""
-
     data = request.json
     conn = get_db()
+    cursor = conn.cursor()
 
-    user = conn.execute("""
-    SELECT * FROM users WHERE username=? AND password=?
-    """, (data["username"], data["password"])).fetchone()
+    user = cursor.execute(
+        "SELECT * FROM users WHERE username=? AND password=?",
+        (data["username"], data["password"])
+    ).fetchone()
 
     if user:
-
-        return jsonify(dict(user))
-    return jsonify({"status": "fail"})
-
-
-# ───────────── PROFILE ─────────────
-@app.route("/api/profile/<username>")
-def get_profile(username):
-    conn = get_db()
-    user = conn.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
-    return jsonify(dict(user))
+        return jsonify({"msg": "success"})
+    return jsonify({"msg": "invalid"}), 401
 
 
-@app.route("/api/profile/update", methods=["POST"])
+# ---------------- PROFILE ----------------
+@app.route("/api/update_profile", methods=["POST"])
 def update_profile():
     data = request.json
-    conn = get_db()
 
-    conn.execute("""
-    UPDATE users SET full_name=?, email=?, college=?, skills=?, bio=?, resume=?
-    WHERE username=?
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    INSERT INTO profiles (username, name, email, college, skills, bio)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(username) DO UPDATE SET
+        name=excluded.name,
+        email=excluded.email,
+        college=excluded.college,
+        skills=excluded.skills,
+        bio=excluded.bio
     """, (
-        data["full_name"],
+        data["username"],
+        data["name"],
         data["email"],
         data["college"],
         data["skills"],
-        data["bio"],
-        data["resume"],
-        data["username"]
+        data["bio"]
     ))
 
     conn.commit()
-    return jsonify({"status": "updated"})
+    return jsonify({"msg": "saved"})
 
 
-# ───────────── SHARE PROFILE ─────────────
-@app.route("/api/share/<share_id>")
-def share_profile(share_id):
+@app.route("/api/get_profile/<username>")
+def get_profile(username):
     conn = get_db()
-    user = conn.execute("SELECT * FROM users WHERE share_id=?", (share_id,)).fetchone()
-    return jsonify(dict(user))
+    cursor = conn.cursor()
+
+    row = cursor.execute(
+        "SELECT name, email, college, skills, bio FROM profiles WHERE username=?",
+        (username,)
+    ).fetchone()
+
+    if row:
+        return jsonify({
+            "name": row[0],
+            "email": row[1],
+            "college": row[2],
+            "skills": row[3],
+            "bio": row[4]
+        })
+
+    return jsonify({})
 
 
-# ───────────── CERTIFICATES ─────────────
+# ---------------- CERTIFICATES ----------------
 @app.route("/api/add_certificate", methods=["POST"])
 def add_cert():
     data = request.json
     conn = get_db()
+    cursor = conn.cursor()
 
-    conn.execute("""
-    INSERT INTO certificates (username, name, link)
-    VALUES (?, ?, ?)
-    """, (data["username"], data["name"], data["link"]))
-
+    cursor.execute(
+        "INSERT INTO certificates VALUES (NULL, ?, ?, ?)",
+        (data["username"], data["name"], data["link"])
+    )
     conn.commit()
-    return jsonify({"status": "added"})
+
+    return jsonify({"msg": "added"})
 
 
 @app.route("/api/get_certificates/<username>")
-def get_certs(username):
+def get_certificates(username):
     conn = get_db()
-    rows = conn.execute("""
-    SELECT * FROM certificates WHERE username=?
-    """, (username,)).fetchall()
+    cursor = conn.cursor()
 
-    return jsonify([dict(r) for r in rows])
+    rows = cursor.execute(
+        "SELECT name, link FROM certificates WHERE username=?",
+        (username,)
+    ).fetchall()
+
+    return jsonify([{"name": r[0], "link": r[1]} for r in rows])
 
 
-# ───────────── HACKATHONS ─────────────
+# ---------------- HACKATHONS ----------------
 @app.route("/api/hackathons")
-def hackathons():
-    conn = get_db()
-    rows = conn.execute("SELECT * FROM hackathons").fetchall()
-    return jsonify([dict(r) for r in rows])
+def get_hackathons():
+    conn = sqlite3.connect("hackathons.db")
+    cursor = conn.cursor()
+
+    rows = cursor.execute(
+        "SELECT title, link, location, date FROM hackathons"
+    ).fetchall()
+
+    return jsonify([
+        {
+            "title": r[0],
+            "link": r[1],
+            "location": r[2],
+            "date": r[3]
+        } for r in rows
+    ])
 
 
-# ───────────── WAITING ROOM ─────────────
+# ---------------- WAITING ROOM ----------------
 @app.route("/api/join_waiting", methods=["POST"])
 def join_waiting():
     data = request.json
-    conn = get_db()
+    h = data["hackathon"]
 
-    conn.execute("""
-    INSERT INTO waiting_room (hackathon_id, username, skills, team_size)
-    VALUES (?, ?, ?, ?)
-    """, (
-        data["hackathon_id"],
-        data["username"],
-        data["skills"],
-        data["team_size"]
-    ))
+    waiting_rooms.setdefault(h, [])
 
-    conn.commit()
-    return jsonify({"status": "joined"})
+    if not any(u["username"] == data["username"] for u in waiting_rooms[h]):
+        waiting_rooms[h].append(data)
+
+    return jsonify({"msg": "joined"})
 
 
-@app.route("/api/waiting/<hackathon_id>")
-def get_waiting(hackathon_id):
-    conn = get_db()
-    rows = conn.execute("""
-    SELECT * FROM waiting_room WHERE hackathon_id=?
-    """, (hackathon_id,)).fetchall()
-
-    return jsonify([dict(r) for r in rows])
-
-
-@app.route("/api/form_team/<hackathon_id>")
-def form_team(hackathon_id):
-    conn = get_db()
-
-    users = conn.execute("""
-    SELECT * FROM waiting_room WHERE hackathon_id=?
-    """, (hackathon_id,)).fetchall()
-
-    if not users:
-        return jsonify({"status": "no users"})
-
-    team_size = users[0]["team_size"]
-
-    if len(users) >= team_size:
-        selected = users[:team_size]
-
-        for u in selected:
-            conn.execute("DELETE FROM waiting_room WHERE id=?", (u["id"],))
-
-        conn.commit()
-
-        return jsonify({
-            "status": "team formed",
-            "team": [dict(u) for u in selected]
-        })
-
-    return jsonify({"status": "not enough users"})
-
-
-# ───────────── RUN ─────────────
-if __name__ == "__main__":
-    print("🚀 Backend running on http://127.0.0.1:8000")
-    app.run(debug=True, port=8000)
-
-        return jsonify({"result": "success", "user": dict(user)}), 200
-    return jsonify({"result": "failed"}), 401
-
-@app.route('/api/update_profile', methods=['POST'])
-def update_profile():
-    """Updates profile details in the database."""
+@app.route("/api/leave_waiting", methods=["POST"])
+def leave_waiting():
     data = request.json
-    try:
-        conn = get_db_connection()
-        conn.execute('''UPDATE users 
-                        SET full_name=?, dob=?, email=?, gender=?, college=?, skills=? 
-                        WHERE username=?''', 
-                     (data['full_name'], data['dob'], data['email'], 
-                      data['gender'], data['college'], data['skills'], data['username']))
-        conn.commit()
-        conn.close()
-        return jsonify({"result": "success"}), 200
-    except Exception as e:
-        return jsonify({"result": "error", "message": str(e)}), 500
+    h = data["hackathon"]
 
-@app.route('/api/hackathons', methods=['GET'])
-def fetch_stored_hackathons():
-    conn = get_db_connection()
-    data = conn.execute('SELECT * FROM hackathons').fetchall()
-    conn.close()
-    return jsonify([dict(row) for row in data])
+    if h in waiting_rooms:
+        waiting_rooms[h] = [
+            u for u in waiting_rooms[h]
+            if u["username"] != data["username"]
+        ]
 
-if __name__ == '__main__':
-    print("🚀 TASKLIN BACKEND STARTING ON PORT 8000...")
+    return jsonify({"msg": "left"})
+
+
+@app.route("/api/get_waiting/<hackathon>")
+def get_waiting(hackathon):
+    users = waiting_rooms.get(hackathon, [])
+    return jsonify({
+        "count": len(users),
+        "users": users
+    })
+
+
+# ---------------- RUN ----------------
+if __name__ == "__main__":
     app.run(debug=True, port=8000)
