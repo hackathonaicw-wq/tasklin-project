@@ -132,6 +132,7 @@ elif menu == "Hackathons":
                 })
                 st.rerun()
 
+
         w = requests.get(
             f"{API}/api/get_waiting/{h['title']}"
         ).json()
