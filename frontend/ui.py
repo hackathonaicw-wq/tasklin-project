@@ -69,6 +69,18 @@ if menu == "Profile":
         })
         st.success("Saved ✅")
 
+    st.divider()
+
+    # 🔥 NEW SECTION: RESUME
+    st.subheader("📄 Resume")
+
+    resume_link = f"{API}/api/resume/{st.session_state.user}"
+    pdf_link = f"{API}/api/resume_pdf/{st.session_state.user}"
+
+    st.markdown(f"🔗 [View Resume]({resume_link})")
+
+    if st.button("⬇️ Download Resume as PDF"):
+        st.markdown(f"[Click here to download]({pdf_link})")
 
 # ---------------- CERTIFICATES ----------------
 elif menu == "Certificates":
@@ -83,6 +95,7 @@ elif menu == "Certificates":
             "name": name,
             "link": link
         })
+        st.success("Added ✅")
 
     data = requests.get(
         f"{API}/api/get_certificates/{st.session_state.user}"
@@ -90,7 +103,6 @@ elif menu == "Certificates":
 
     for c in data:
         st.write(f"📜 {c['name']} - {c['link']}")
-
 
 # ---------------- HACKATHONS ----------------
 elif menu == "Hackathons":
