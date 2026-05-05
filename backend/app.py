@@ -1,74 +1,33 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import sqlite3
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
 
 app = Flask(__name__)
 CORS(app)
 
 DB = "tasklin.db"
 
+
 # ---------------- DB ----------------
 def get_db():
-    return sqlite3.connect(DB, check_same_thread=False)
+    return sqlite3.connect(DB)
 
-def init_db():
-    conn = get_db()
-    cursor = conn.cursor()
-
-    # USERS
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT UNIQUE,
-        password TEXT
-    )
-    """)
-
-    # CERTIFICATES
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS certificates (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT,
-        name TEXT,
-        link TEXT
-    )
-    """)
-
-    # PROFILE
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS profiles (
-        username TEXT PRIMARY KEY,
-        name TEXT,
-        email TEXT,
-        college TEXT,
-        skills TEXT,
-        bio TEXT
-    )
-    """)
-
-    conn.commit()
-    conn.close()
-
-init_db()
-
-# ---------------- WAITING ROOM ----------------
-waiting_rooms = {}
 
 # ---------------- AUTH ----------------
 @app.route("/api/signup", methods=["POST"])
 def signup():
     data = request.json
-    try:
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT INTO users (username, password) VALUES (?, ?)",
-            (data["username"], data["password"])
-        )
-        conn.commit()
-        return jsonify({"msg": "signup success"})
-    except:
-        return jsonify({"msg": "user exists"}), 400
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute("INSERT INTO users VALUES (?, ?)",
+                   (data["username"], data["password"]))
+    conn.commit()
+    conn.close()
+
+    return jsonify({"msg": "ok"})
 
 
 @app.route("/api/login", methods=["POST"])
@@ -82,28 +41,23 @@ def login():
         (data["username"], data["password"])
     ).fetchone()
 
+    conn.close()
+
     if user:
-        return jsonify({"msg": "success"})
-    return jsonify({"msg": "invalid"}), 401
+        return jsonify({"msg": "ok"})
+    return jsonify({"msg": "fail"}), 401
 
 
 # ---------------- PROFILE ----------------
 @app.route("/api/update_profile", methods=["POST"])
 def update_profile():
     data = request.json
-
     conn = get_db()
     cursor = conn.cursor()
 
     cursor.execute("""
-    INSERT INTO profiles (username, name, email, college, skills, bio)
-    VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(username) DO UPDATE SET
-        name=excluded.name,
-        email=excluded.email,
-        college=excluded.college,
-        skills=excluded.skills,
-        bio=excluded.bio
+        INSERT OR REPLACE INTO profiles
+        VALUES (?, ?, ?, ?, ?, ?)
     """, (
         data["username"],
         data["name"],
@@ -114,6 +68,8 @@ def update_profile():
     ))
 
     conn.commit()
+    conn.close()
+
     return jsonify({"msg": "saved"})
 
 
@@ -123,20 +79,23 @@ def get_profile(username):
     cursor = conn.cursor()
 
     row = cursor.execute(
-        "SELECT name, email, college, skills, bio FROM profiles WHERE username=?",
+        "SELECT * FROM profiles WHERE username=?",
         (username,)
     ).fetchone()
 
-    if row:
-        return jsonify({
-            "name": row[0],
-            "email": row[1],
-            "college": row[2],
-            "skills": row[3],
-            "bio": row[4]
-        })
+    conn.close()
 
-    return jsonify({})
+    if not row:
+        return jsonify({})
+
+    return jsonify({
+        "username": row[0],
+        "name": row[1],
+        "email": row[2],
+        "college": row[3],
+        "skills": row[4],
+        "bio": row[5]
+    })
 
 
 # ---------------- CERTIFICATES ----------------
@@ -151,6 +110,7 @@ def add_cert():
         (data["username"], data["name"], data["link"])
     )
     conn.commit()
+    conn.close()
 
     return jsonify({"msg": "added"})
 
@@ -165,18 +125,22 @@ def get_certificates(username):
         (username,)
     ).fetchall()
 
+    conn.close()
+
     return jsonify([{"name": r[0], "link": r[1]} for r in rows])
 
 
 # ---------------- HACKATHONS ----------------
 @app.route("/api/hackathons")
 def get_hackathons():
-    conn = sqlite3.connect("hackathons.db")
+    conn = get_db()
     cursor = conn.cursor()
 
     rows = cursor.execute(
         "SELECT title, link, location, date FROM hackathons"
     ).fetchall()
+
+    conn.close()
 
     return jsonify([
         {
@@ -192,12 +156,16 @@ def get_hackathons():
 @app.route("/api/join_waiting", methods=["POST"])
 def join_waiting():
     data = request.json
-    h = data["hackathon"]
+    conn = get_db()
+    cursor = conn.cursor()
 
-    waiting_rooms.setdefault(h, [])
+    cursor.execute(
+        "INSERT INTO waiting VALUES (?, ?, ?)",
+        (data["username"], data["hackathon"], data["skills"])
+    )
 
-    if not any(u["username"] == data["username"] for u in waiting_rooms[h]):
-        waiting_rooms[h].append(data)
+    conn.commit()
+    conn.close()
 
     return jsonify({"msg": "joined"})
 
@@ -205,24 +173,154 @@ def join_waiting():
 @app.route("/api/leave_waiting", methods=["POST"])
 def leave_waiting():
     data = request.json
-    h = data["hackathon"]
+    conn = get_db()
+    cursor = conn.cursor()
 
-    if h in waiting_rooms:
-        waiting_rooms[h] = [
-            u for u in waiting_rooms[h]
-            if u["username"] != data["username"]
-        ]
+    cursor.execute(
+        "DELETE FROM waiting WHERE username=? AND hackathon=?",
+        (data["username"], data["hackathon"])
+    )
+
+    conn.commit()
+    conn.close()
 
     return jsonify({"msg": "left"})
 
 
 @app.route("/api/get_waiting/<hackathon>")
 def get_waiting(hackathon):
-    users = waiting_rooms.get(hackathon, [])
+    conn = get_db()
+    cursor = conn.cursor()
+
+    rows = cursor.execute(
+        "SELECT username, skills FROM waiting WHERE hackathon=?",
+        (hackathon,)
+    ).fetchall()
+
+    conn.close()
+
     return jsonify({
-        "count": len(users),
-        "users": users
+        "count": len(rows),
+        "users": [{"username": r[0], "skills": r[1]} for r in rows]
     })
+
+
+# ---------------- RESUME (HTML) ----------------
+@app.route("/api/resume/<username>")
+def resume(username):
+    conn = get_db()
+    cursor = conn.cursor()
+
+    p = cursor.execute(
+        "SELECT * FROM profiles WHERE username=?",
+        (username,)
+    ).fetchone()
+
+    certs = cursor.execute(
+        "SELECT name, link FROM certificates WHERE username=?",
+        (username,)
+    ).fetchall()
+
+    hacks = cursor.execute(
+        "SELECT hackathon FROM waiting WHERE username=?",
+        (username,)
+    ).fetchall()
+
+    conn.close()
+
+    if not p:
+        return "No profile found"
+
+    # ✅ FIX 1: filter empty certificates
+    cert_html = ""
+    for c in certs:
+        if not c[0].strip():
+            continue
+        cert_html += f"<li><a href='{c[1]}'>{c[0]}</a></li>"
+
+    hack_html = "".join([f"<li>{h[0]}</li>" for h in hacks])
+
+    html = f"""
+    <html>
+    <head>
+        <title>{p[1]}</title>
+        <style>
+            body {{
+                font-family: Arial;
+                margin: 40px;
+                color: #333;
+            }}
+            h1 {{ color: #2c3e50; }}
+            h2 {{
+                border-bottom: 2px solid #ddd;
+                padding-bottom: 5px;
+            }}
+        </style>
+    </head>
+
+    <body>
+
+    <h1>{p[1]}</h1>
+
+    <p><b>Email:</b> {p[2]}</p>
+    <p><b>College:</b> {p[3]}</p>
+    <p><b>Skills:</b> {p[4]}</p>
+
+    <h2>Bio</h2>
+    <p>{p[5]}</p>
+
+    <h2>Certificates</h2>
+    <ul>{cert_html}</ul>
+
+    <h2>Hackathons Participated</h2>
+    <ul>{hack_html}</ul>
+
+    </body>
+    </html>
+    """
+
+    return html
+
+
+# ---------------- RESUME PDF ----------------
+@app.route("/api/resume_pdf/<username>")
+def resume_pdf(username):
+    conn = get_db()
+    cursor = conn.cursor()
+
+    p = cursor.execute(
+        "SELECT * FROM profiles WHERE username=?",
+        (username,)
+    ).fetchone()
+
+    certs = cursor.execute(
+        "SELECT name FROM certificates WHERE username=?",
+        (username,)
+    ).fetchall()
+
+    conn.close()
+
+    doc = SimpleDocTemplate(f"{username}_resume.pdf")
+    styles = getSampleStyleSheet()
+    content = []
+
+    content.append(Paragraph(p[1], styles["Title"]))
+    content.append(Spacer(1, 10))
+    content.append(Paragraph(f"Email: {p[2]}", styles["Normal"]))
+    content.append(Paragraph(f"College: {p[3]}", styles["Normal"]))
+    content.append(Paragraph(f"Skills: {p[4]}", styles["Normal"]))
+
+    content.append(Spacer(1, 10))
+    content.append(Paragraph("Certificates", styles["Heading2"]))
+
+    for c in certs:
+        if not c[0].strip():  # ✅ FIX 2
+            continue
+        content.append(Paragraph(f"- {c[0]}", styles["Normal"]))
+
+    doc.build(content)
+
+    return send_file(f"{username}_resume.pdf", as_attachment=True)
 
 
 # ---------------- RUN ----------------
