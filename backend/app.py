@@ -3,7 +3,6 @@ from flask_cors import CORS
 import sqlite3
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
-import os
 
 app = Flask(__name__)
 CORS(app)
@@ -42,7 +41,7 @@ cursor.execute("""
 CREATE TABLE IF NOT EXISTS certificates (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT,
-    name TEXT,
+    hackathon TEXT,
     link TEXT
 )
 """)
@@ -119,17 +118,41 @@ def update_profile():
     conn = get_db()
     cursor = conn.cursor()
 
-    cursor.execute("""
-        INSERT OR REPLACE INTO profiles
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (
-        data["username"],
-        data["name"],
-        data["email"],
-        data["college"],
-        data["skills"],
-        data["bio"]
-    ))
+    existing = cursor.execute(
+        "SELECT username FROM profiles WHERE username=?",
+        (data["username"],)
+    ).fetchone()
+
+    if existing:
+        cursor.execute("""
+            UPDATE profiles
+            SET name=?,
+                email=?,
+                college=?,
+                skills=?,
+                bio=?
+            WHERE username=?
+        """, (
+            data["name"],
+            data["email"],
+            data["college"],
+            data["skills"],
+            data["bio"],
+            data["username"]
+        ))
+
+    else:
+        cursor.execute("""
+            INSERT INTO profiles
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (
+            data["username"],
+            data["name"],
+            data["email"],
+            data["college"],
+            data["skills"],
+            data["bio"]
+        ))
 
     conn.commit()
     conn.close()
@@ -174,7 +197,11 @@ def add_cert():
 
     cursor.execute(
         "INSERT INTO certificates VALUES (NULL, ?, ?, ?)",
-        (data["username"], data["name"], data["link"])
+        (
+            data["username"],
+            data["name"],
+            data["link"]
+        )
     )
 
     conn.commit()
@@ -186,29 +213,23 @@ def add_cert():
 @app.route("/api/get_certificates/<username>")
 def get_certificates(username):
 
-    conn = sqlite3.connect(DB)
-    conn.row_factory = sqlite3.Row
+    conn = get_db()
+    cursor = conn.cursor()
 
-    cur = conn.cursor()
-
-    cur.execute(
-        "SELECT * FROM certificates WHERE username=?",
+    rows = cursor.execute(
+        "SELECT hackathon, link FROM certificates WHERE username=?",
         (username,)
-    )
-
-    rows = cur.fetchall()
+    ).fetchall()
 
     conn.close()
 
-    data = []
-
-    for r in rows:
-        data.append({
-            "name": r["name"],
-            "link": r["link"]
-        })
-
-    return jsonify(data)
+    return jsonify([
+        {
+            "name": r[0],
+            "link": r[1]
+        }
+        for r in rows
+    ])
 
 
 # ---------------- DELETE CERTIFICATE ----------------
@@ -221,8 +242,11 @@ def delete_certificate():
     cursor = conn.cursor()
 
     cursor.execute(
-        "DELETE FROM certificates WHERE username=? AND name=?",
-        (data["username"], data["name"])
+        "DELETE FROM certificates WHERE username=? AND hackathon=?",
+        (
+            data["username"],
+            data["name"]
+        )
     )
 
     conn.commit()
@@ -331,127 +355,161 @@ def get_waiting(hackathon):
 @app.route("/api/resume/<username>")
 def resume(username):
 
-    conn = get_db()
-    cursor = conn.cursor()
+    try:
 
-    p = cursor.execute(
-        "SELECT * FROM profiles WHERE username=?",
-        (username,)
-    ).fetchone()
+        conn = get_db()
+        cursor = conn.cursor()
 
-    certs = cursor.execute(
-        "SELECT name, link FROM certificates WHERE username=?",
-        (username,)
-    ).fetchall()
+        p = cursor.execute(
+            "SELECT * FROM profiles WHERE username=?",
+            (username,)
+        ).fetchone()
 
-    hacks = cursor.execute(
-        "SELECT hackathon FROM waiting WHERE username=?",
-        (username,)
-    ).fetchall()
+        certs = cursor.execute(
+            "SELECT hackathon, link FROM certificates WHERE username=?",
+            (username,)
+        ).fetchall()
 
-    conn.close()
+        hacks = cursor.execute(
+            "SELECT hackathon FROM waiting WHERE username=?",
+            (username,)
+        ).fetchall()
 
-    if not p:
-        return "No profile found"
+        conn.close()
 
-    cert_html = ""
+        if not p:
+            return "<h1>No profile found</h1>"
 
-    for c in certs:
-        if c[0] and c[0].strip():
-            cert_html += f"<li><a href='{c[1]}'>{c[0]}</a></li>"
+        cert_html = ""
 
-    hack_html = ""
+        for c in certs:
 
-    for h in hacks:
-        hack_html += f"<li>{h[0]}</li>"
+            if c[0] and c[0].strip():
+                cert_html += f"<li><a href='{c[1]}'>{c[0]}</a></li>"
 
-    return f"""
-    <html>
-    <body style="font-family:Arial;padding:40px;">
+        hack_html = ""
 
-    <h1>{p[1]}</h1>
+        for h in hacks:
+            hack_html += f"<li>{h[0]}</li>"
 
-    <p><b>Email:</b> {p[2]}</p>
-    <p><b>College:</b> {p[3]}</p>
-    <p><b>Skills:</b> {p[4]}</p>
+        html = f"""
+        <html>
+        <body style="font-family:Arial;padding:40px;">
+            <h1>{p[1]}</h1>
 
-    <h2>Bio</h2>
-    <p>{p[5]}</p>
+            <p><b>Email:</b> {p[2]}</p>
+            <p><b>College:</b> {p[3]}</p>
+            <p><b>Skills:</b> {p[4]}</p>
 
-    <h2>Certificates</h2>
-    <ul>{cert_html}</ul>
+            <h2>Bio</h2>
+            <p>{p[5]}</p>
 
-    <h2>Hackathons Participated</h2>
-    <ul>{hack_html}</ul>
+            <h2>Certificates</h2>
+            <ul>{cert_html}</ul>
 
-    </body>
-    </html>
-    """
+            <h2>Hackathons Participated</h2>
+            <ul>{hack_html}</ul>
+        </body>
+        </html>
+        """
+
+        return html
+
+    except Exception as e:
+        return f"<h1>ERROR:</h1><p>{str(e)}</p>"
 
 
 # ---------------- RESUME PDF ----------------
 @app.route("/api/resume_pdf/<username>")
 def resume_pdf(username):
 
-    conn = get_db()
-    cursor = conn.cursor()
+    try:
 
-    p = cursor.execute(
-        "SELECT * FROM profiles WHERE username=?",
-        (username,)
-    ).fetchone()
+        conn = get_db()
+        cursor = conn.cursor()
 
-    certs = cursor.execute(
-        "SELECT name FROM certificates WHERE username=?",
-        (username,)
-    ).fetchall()
+        p = cursor.execute(
+            "SELECT * FROM profiles WHERE username=?",
+            (username,)
+        ).fetchone()
 
-    conn.close()
+        certs = cursor.execute(
+            "SELECT hackathon FROM certificates WHERE username=?",
+            (username,)
+        ).fetchall()
 
-    if not p:
-        return "No profile found"
+        conn.close()
 
-    doc = SimpleDocTemplate(f"{username}_resume.pdf")
+        if not p:
+            return "No profile found"
 
-    styles = getSampleStyleSheet()
+        pdf_file = f"{username}_resume.pdf"
 
-    content = []
+        doc = SimpleDocTemplate(pdf_file)
 
-    content.append(Paragraph(p[1], styles["Title"]))
-    content.append(Spacer(1, 10))
+        styles = getSampleStyleSheet()
 
-    content.append(
-        Paragraph(f"Email: {p[2]}", styles["Normal"])
-    )
+        content = []
 
-    content.append(
-        Paragraph(f"College: {p[3]}", styles["Normal"])
-    )
-
-    content.append(
-        Paragraph(f"Skills: {p[4]}", styles["Normal"])
-    )
-
-    content.append(Spacer(1, 10))
-
-    content.append(
-        Paragraph("Certificates", styles["Heading2"])
-    )
-
-    for c in certs:
-
-        if c[0] and c[0].strip():
-
-            content.append(
-                Paragraph(f"- {c[0]}", styles["Normal"])
+        content.append(
+            Paragraph(
+                p[1] if p[1] else username,
+                styles["Title"]
             )
+        )
 
-    doc.build(content)
+        content.append(Spacer(1, 10))
 
-    return send_file(
-        f"{username}_resume.pdf",
-        as_attachment=True
-    )
+        content.append(
+            Paragraph(
+                f"Email: {p[2]}",
+                styles["Normal"]
+            )
+        )
+
+        content.append(
+            Paragraph(
+                f"College: {p[3]}",
+                styles["Normal"]
+            )
+        )
+
+        content.append(
+            Paragraph(
+                f"Skills: {p[4]}",
+                styles["Normal"]
+            )
+        )
+
+        content.append(Spacer(1, 10))
+
+        content.append(
+            Paragraph(
+                "Certificates",
+                styles["Heading2"]
+            )
+        )
+
+        for c in certs:
+
+            if c[0] and c[0].strip():
+
+                content.append(
+                    Paragraph(
+                        f"- {c[0]}",
+                        styles["Normal"]
+                    )
+                )
+
+        doc.build(content)
+
+        return send_file(
+            pdf_file,
+            as_attachment=True
+        )
+
+    except Exception as e:
+        return f"ERROR: {str(e)}"
 
 
 # ---------------- RUN ----------------

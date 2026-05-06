@@ -84,8 +84,8 @@ if not st.session_state.user:
             else:
                 st.error("Invalid credentials")
 
-        except:
-            st.error("Backend not running")
+        except Exception as e:
+            st.error(f"Error: {e}")
 
     st.stop()
 
@@ -108,13 +108,9 @@ if menu == "Profile":
 
     try:
         res = requests.get(f"{API}/api/get_profile/{st.session_state.user}")
-
-        if res.text.strip():
-            p = res.json()
-        else:
-            p = {}
-
-    except:
+        p = res.json()
+    except Exception as e:
+        st.error(f"Error: {e}")
         p = {}
 
     name = st.text_input("Name", p.get("name", ""))
@@ -124,15 +120,21 @@ if menu == "Profile":
     bio = st.text_area("Bio", p.get("bio", ""))
 
     if st.button("Save"):
-        requests.post(f"{API}/api/update_profile", json={
-            "username": st.session_state.user,
-            "name": name,
-            "email": email,
-            "college": college,
-            "skills": skills,
-            "bio": bio
-        })
-        st.success("Saved ✅")
+
+        try:
+            requests.post(f"{API}/api/update_profile", json={
+                "username": st.session_state.user,
+                "name": name,
+                "email": email,
+                "college": college,
+                "skills": skills,
+                "bio": bio
+            })
+
+            st.success("Saved ✅")
+
+        except Exception as e:
+            st.error(f"Error: {e}")
 
     st.divider()
 
@@ -155,25 +157,27 @@ elif menu == "Certificates":
     link = st.text_input("Link")
 
     if st.button("Add"):
-        requests.post(f"{API}/api/add_certificate", json={
-            "username": st.session_state.user,
-            "name": name,
-            "link": link
-        })
-        st.success("Added ✅")
 
-    # ✅ FIXED JSON ERROR HERE
+        try:
+            requests.post(f"{API}/api/add_certificate", json={
+                "username": st.session_state.user,
+                "name": name,
+                "link": link
+            })
+
+            st.success("Added ✅")
+            st.rerun()
+
+        except Exception as e:
+            st.error(f"Error: {e}")
+
     try:
-        res = requests.get(
+        data = requests.get(
             f"{API}/api/get_certificates/{st.session_state.user}"
-        )
+        ).json()
 
-        if res.text.strip():
-            data = res.json()
-        else:
-            data = []
-
-    except:
+    except Exception as e:
+        st.error(f"Error: {e}")
         data = []
 
     for c in data:
@@ -184,11 +188,17 @@ elif menu == "Certificates":
 
         with col2:
             if st.button("❌", key=f"delete_{c['name']}_{c['link']}"):
-                requests.post(f"{API}/api/delete_certificate", json={
-                    "username": st.session_state.user,
-                    "name": c["name"]
-                })
-                st.rerun()
+
+                try:
+                    requests.post(f"{API}/api/delete_certificate", json={
+                        "username": st.session_state.user,
+                        "name": c["name"]
+                    })
+
+                    st.rerun()
+
+                except Exception as e:
+                    st.error(f"Error: {e}")
 
 # ---------------- HACKATHONS ----------------
 elif menu == "Hackathons":
@@ -200,14 +210,10 @@ elif menu == "Hackathons":
     filt = st.radio("Filter", ["All", "Online", "Offline"])
 
     try:
-        res = requests.get(f"{API}/api/hackathons")
+        hacks = requests.get(f"{API}/api/hackathons").json()
 
-        if res.text.strip():
-            hacks = res.json()
-        else:
-            hacks = []
-
-    except:
+    except Exception as e:
+        st.error(f"Error: {e}")
         hacks = []
 
     for h in hacks:
@@ -230,41 +236,47 @@ elif menu == "Hackathons":
                 "🚀 Join",
                 key=f"join_{h['title']}_{h['date']}"
             ):
-                requests.post(f"{API}/api/join_waiting", json={
-                    "username": st.session_state.user,
-                    "hackathon": h["title"],
-                    "skills": "Python"
-                })
-                st.rerun()
+
+                try:
+                    requests.post(f"{API}/api/join_waiting", json={
+                        "username": st.session_state.user,
+                        "hackathon": h["title"],
+                        "skills": "Python"
+                    })
+
+                    st.rerun()
+
+                except Exception as e:
+                    st.error(f"Error: {e}")
 
         with col2:
             if st.button(
                 "❌ Leave",
                 key=f"leave_{h['title']}_{h['date']}"
             ):
-                requests.post(f"{API}/api/leave_waiting", json={
-                    "username": st.session_state.user,
-                    "hackathon": h["title"]
-                })
-                st.rerun()
 
-        # ✅ FIXED WAITING JSON ERROR
+                try:
+                    requests.post(f"{API}/api/leave_waiting", json={
+                        "username": st.session_state.user,
+                        "hackathon": h["title"]
+                    })
+
+                    st.rerun()
+
+                except Exception as e:
+                    st.error(f"Error: {e}")
+
         try:
-            wait_res = requests.get(
+            w = requests.get(
                 f"{API}/api/get_waiting/{h['title']}"
-            )
+            ).json()
 
-            if wait_res.text.strip():
-                w = wait_res.json()
-            else:
-                w = {"count": 0, "users": []}
+            st.info(f"👥 {w['count']} people waiting")
 
-        except:
-            w = {"count": 0, "users": []}
+            for u in w["users"]:
+                st.write(f"• {u['username']} ({u['skills']})")
 
-        st.info(f"👥 {w['count']} people waiting")
-
-        for u in w["users"]:
-            st.write(f"• {u['username']} ({u['skills']})")
+        except Exception as e:
+            st.error(f"Error: {e}")
 
         st.divider()
