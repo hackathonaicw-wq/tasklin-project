@@ -322,6 +322,24 @@ def resume_pdf(username):
 
     return send_file(f"{username}_resume.pdf", as_attachment=True)
 
+# ---------------- DELETE CERTIFICATE ----------------
+@app.route("/api/delete_certificate", methods=["POST"])
+def delete_certificate():
+    data = request.json
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "DELETE FROM certificates WHERE username=? AND name=?",
+        (data["username"], data["name"])
+    )
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({"msg": "deleted"})
+
 
 # ---------------- RUN ----------------
 if __name__ == "__main__":
