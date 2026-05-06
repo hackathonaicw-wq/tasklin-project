@@ -7,44 +7,35 @@ API = "http://127.0.0.1:8000"
 
 st.set_page_config(page_title="TASKLIN", layout="wide")
 
-# ---------------- VIDEO BACKGROUND ----------------
-def set_video_bg(video_file):
-    video_path = os.path.join(os.path.dirname(__file__), video_file)
+# ---------------- IMAGE BACKGROUND ----------------
+def set_image_bg(image_file):
+    image_path = os.path.join(os.path.dirname(__file__), image_file)
 
-    if not os.path.exists(video_path):
-        st.warning(f"{video_file} not found")
+    if not os.path.exists(image_path):
+        st.warning(f"{image_file} not found")
         return
 
-    with open(video_path, "rb") as f:
+    with open(image_path, "rb") as f:
         data = base64.b64encode(f.read()).decode()
 
     st.markdown(f"""
     <style>
     .stApp {{
-        background: transparent;
-    }}
-
-    #bgvid {{
-        position: fixed;
-        right: 0;
-        bottom: 0;
-        min-width: 100%;
-        min-height: 100%;
-        z-index: -1;
-        object-fit: cover;
-    }}
-
-    /* ❌ REMOVED BOX COMPLETELY */
-    .center-card {{
-        position: static;
-        background: none;
-        padding: 0;
-        box-shadow: none;
-        border: none;
+        background: url("data:image/jpg;base64,{data}");
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+        background-attachment: fixed;
     }}
 
     .stTextInput>div>div>input {{
         background-color: rgba(255,255,255,0.05);
+        color: white;
+    }}
+
+    .stTextArea textarea {{
+        background-color: rgba(255,255,255,0.05);
+        color: white;
     }}
 
     .stButton button {{
@@ -54,11 +45,11 @@ def set_video_bg(video_file):
         color: white;
         border: none;
     }}
-    </style>
 
-    <video autoplay muted loop id="bgvid">
-        <source src="data:video/mp4;base64,{data}" type="video/mp4">
-    </video>
+    h1, h2, h3, h4, h5, h6, p, label, span {{
+        color: white !important;
+    }}
+    </style>
     """, unsafe_allow_html=True)
 
 # ---------------- SESSION ----------------
@@ -68,7 +59,7 @@ if "user" not in st.session_state:
 # ---------------- LOGIN ----------------
 if not st.session_state.user:
 
-    set_video_bg("login.mp4")
+    set_image_bg("login.jpg")
 
     st.markdown("## 🚀 TASKLIN")
     st.caption("Build teams • Discover hackathons • Showcase yourself")
@@ -111,7 +102,7 @@ if st.sidebar.button("Logout"):
 # ---------------- PROFILE ----------------
 if menu == "Profile":
 
-    set_video_bg("profile.mp4")
+    set_image_bg("profile.jpg")
 
     st.title("Profile")
 
@@ -148,7 +139,7 @@ if menu == "Profile":
 # ---------------- CERTIFICATES ----------------
 elif menu == "Certificates":
 
-    set_video_bg("profile.mp4")
+    set_image_bg("profile.jpg")
 
     st.title("Certificates")
 
@@ -184,7 +175,7 @@ elif menu == "Certificates":
 # ---------------- HACKATHONS ----------------
 elif menu == "Hackathons":
 
-    set_video_bg("profile.mp4")
+    set_image_bg("profile.jpg")
 
     st.title("🌐 Hackathons")
 
@@ -196,6 +187,7 @@ elif menu == "Hackathons":
 
         if filt == "Online" and "online" not in h["location"].lower():
             continue
+
         if filt == "Offline" and "offline" not in h["location"].lower():
             continue
 
@@ -207,7 +199,10 @@ elif menu == "Hackathons":
         col1, col2 = st.columns(2)
 
         with col1:
-            if st.button("🚀 Join", key=h["title"]):
+            if st.button(
+                "🚀 Join",
+                key=f"join_{h['title']}_{h['date']}"
+            ):
                 requests.post(f"{API}/api/join_waiting", json={
                     "username": st.session_state.user,
                     "hackathon": h["title"],
@@ -216,7 +211,10 @@ elif menu == "Hackathons":
                 st.rerun()
 
         with col2:
-            if st.button("❌ Leave", key=h["title"]+"leave"):
+            if st.button(
+                "❌ Leave",
+                key=f"leave_{h['title']}_{h['date']}"
+            ):
                 requests.post(f"{API}/api/leave_waiting", json={
                     "username": st.session_state.user,
                     "hackathon": h["title"]

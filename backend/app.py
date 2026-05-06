@@ -7,12 +7,65 @@ from reportlab.lib.styles import getSampleStyleSheet
 app = Flask(__name__)
 CORS(app)
 
-DB = "tasklin.db"
+DB = "hackathons.db"
 
 
 # ---------------- DB ----------------
 def get_db():
     return sqlite3.connect(DB)
+
+
+# ---------------- INIT TABLES ----------------
+conn = get_db()
+cursor = conn.cursor()
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS users (
+    username TEXT,
+    password TEXT
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS profiles (
+    username TEXT,
+    name TEXT,
+    email TEXT,
+    college TEXT,
+    skills TEXT,
+    bio TEXT
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS certificates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT,
+    name TEXT,
+    link TEXT
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS waiting (
+    username TEXT,
+    hackathon TEXT,
+    skills TEXT
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS hackathons (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT,
+    link TEXT,
+    location TEXT,
+    date TEXT
+)
+""")
+
+conn.commit()
+conn.close()
 
 
 # ---------------- AUTH ----------------
@@ -22,8 +75,11 @@ def signup():
     conn = get_db()
     cursor = conn.cursor()
 
-    cursor.execute("INSERT INTO users VALUES (?, ?)",
-                   (data["username"], data["password"]))
+    cursor.execute(
+        "INSERT INTO users VALUES (?, ?)",
+        (data["username"], data["password"])
+    )
+
     conn.commit()
     conn.close()
 
@@ -33,6 +89,7 @@ def signup():
 @app.route("/api/login", methods=["POST"])
 def login():
     data = request.json
+
     conn = get_db()
     cursor = conn.cursor()
 
@@ -45,6 +102,7 @@ def login():
 
     if user:
         return jsonify({"msg": "ok"})
+
     return jsonify({"msg": "fail"}), 401
 
 
@@ -52,6 +110,7 @@ def login():
 @app.route("/api/update_profile", methods=["POST"])
 def update_profile():
     data = request.json
+
     conn = get_db()
     cursor = conn.cursor()
 
@@ -75,6 +134,7 @@ def update_profile():
 
 @app.route("/api/get_profile/<username>")
 def get_profile(username):
+
     conn = get_db()
     cursor = conn.cursor()
 
@@ -101,7 +161,9 @@ def get_profile(username):
 # ---------------- CERTIFICATES ----------------
 @app.route("/api/add_certificate", methods=["POST"])
 def add_cert():
+
     data = request.json
+
     conn = get_db()
     cursor = conn.cursor()
 
@@ -109,6 +171,7 @@ def add_cert():
         "INSERT INTO certificates VALUES (NULL, ?, ?, ?)",
         (data["username"], data["name"], data["link"])
     )
+
     conn.commit()
     conn.close()
 
@@ -117,6 +180,7 @@ def add_cert():
 
 @app.route("/api/get_certificates/<username>")
 def get_certificates(username):
+
     conn = get_db()
     cursor = conn.cursor()
 
@@ -127,18 +191,43 @@ def get_certificates(username):
 
     conn.close()
 
-    return jsonify([{"name": r[0], "link": r[1]} for r in rows])
+    return jsonify([
+        {"name": r[0], "link": r[1]}
+        for r in rows
+    ])
+
+
+# ---------------- DELETE CERTIFICATE ----------------
+@app.route("/api/delete_certificate", methods=["POST"])
+def delete_certificate():
+
+    data = request.json
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "DELETE FROM certificates WHERE username=? AND name=?",
+        (data["username"], data["name"])
+    )
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({"msg": "deleted"})
 
 
 # ---------------- HACKATHONS ----------------
 @app.route("/api/hackathons")
 def get_hackathons():
+
     conn = get_db()
     cursor = conn.cursor()
 
-    rows = cursor.execute(
-        "SELECT title, link, location, date FROM hackathons"
-    ).fetchall()
+    rows = cursor.execute("""
+        SELECT title, link, location, date
+        FROM hackathons
+    """).fetchall()
 
     conn.close()
 
@@ -148,20 +237,27 @@ def get_hackathons():
             "link": r[1],
             "location": r[2],
             "date": r[3]
-        } for r in rows
+        }
+        for r in rows
     ])
 
 
 # ---------------- WAITING ROOM ----------------
 @app.route("/api/join_waiting", methods=["POST"])
 def join_waiting():
+
     data = request.json
+
     conn = get_db()
     cursor = conn.cursor()
 
     cursor.execute(
         "INSERT INTO waiting VALUES (?, ?, ?)",
-        (data["username"], data["hackathon"], data["skills"])
+        (
+            data["username"],
+            data["hackathon"],
+            data["skills"]
+        )
     )
 
     conn.commit()
@@ -172,13 +268,18 @@ def join_waiting():
 
 @app.route("/api/leave_waiting", methods=["POST"])
 def leave_waiting():
+
     data = request.json
+
     conn = get_db()
     cursor = conn.cursor()
 
     cursor.execute(
         "DELETE FROM waiting WHERE username=? AND hackathon=?",
-        (data["username"], data["hackathon"])
+        (
+            data["username"],
+            data["hackathon"]
+        )
     )
 
     conn.commit()
@@ -189,6 +290,7 @@ def leave_waiting():
 
 @app.route("/api/get_waiting/<hackathon>")
 def get_waiting(hackathon):
+
     conn = get_db()
     cursor = conn.cursor()
 
@@ -201,13 +303,20 @@ def get_waiting(hackathon):
 
     return jsonify({
         "count": len(rows),
-        "users": [{"username": r[0], "skills": r[1]} for r in rows]
+        "users": [
+            {
+                "username": r[0],
+                "skills": r[1]
+            }
+            for r in rows
+        ]
     })
 
 
-# ---------------- RESUME (HTML) ----------------
+# ---------------- RESUME HTML ----------------
 @app.route("/api/resume/<username>")
 def resume(username):
+
     conn = get_db()
     cursor = conn.cursor()
 
@@ -231,50 +340,36 @@ def resume(username):
     if not p:
         return "No profile found"
 
-    # ✅ FIX 1: filter empty certificates
     cert_html = ""
+
     for c in certs:
         if not c[0].strip():
             continue
+
         cert_html += f"<li><a href='{c[1]}'>{c[0]}</a></li>"
 
-    hack_html = "".join([f"<li>{h[0]}</li>" for h in hacks])
+    hack_html = "".join([
+        f"<li>{h[0]}</li>"
+        for h in hacks
+    ])
 
     html = f"""
     <html>
-    <head>
-        <title>{p[1]}</title>
-        <style>
-            body {{
-                font-family: Arial;
-                margin: 40px;
-                color: #333;
-            }}
-            h1 {{ color: #2c3e50; }}
-            h2 {{
-                border-bottom: 2px solid #ddd;
-                padding-bottom: 5px;
-            }}
-        </style>
-    </head>
+    <body style="font-family:Arial;padding:40px;">
+        <h1>{p[1]}</h1>
 
-    <body>
+        <p><b>Email:</b> {p[2]}</p>
+        <p><b>College:</b> {p[3]}</p>
+        <p><b>Skills:</b> {p[4]}</p>
 
-    <h1>{p[1]}</h1>
+        <h2>Bio</h2>
+        <p>{p[5]}</p>
 
-    <p><b>Email:</b> {p[2]}</p>
-    <p><b>College:</b> {p[3]}</p>
-    <p><b>Skills:</b> {p[4]}</p>
+        <h2>Certificates</h2>
+        <ul>{cert_html}</ul>
 
-    <h2>Bio</h2>
-    <p>{p[5]}</p>
-
-    <h2>Certificates</h2>
-    <ul>{cert_html}</ul>
-
-    <h2>Hackathons Participated</h2>
-    <ul>{hack_html}</ul>
-
+        <h2>Hackathons Participated</h2>
+        <ul>{hack_html}</ul>
     </body>
     </html>
     """
@@ -285,6 +380,7 @@ def resume(username):
 # ---------------- RESUME PDF ----------------
 @app.route("/api/resume_pdf/<username>")
 def resume_pdf(username):
+
     conn = get_db()
     cursor = conn.cursor()
 
@@ -301,46 +397,52 @@ def resume_pdf(username):
     conn.close()
 
     doc = SimpleDocTemplate(f"{username}_resume.pdf")
+
     styles = getSampleStyleSheet()
+
     content = []
 
     content.append(Paragraph(p[1], styles["Title"]))
     content.append(Spacer(1, 10))
-    content.append(Paragraph(f"Email: {p[2]}", styles["Normal"]))
-    content.append(Paragraph(f"College: {p[3]}", styles["Normal"]))
-    content.append(Paragraph(f"Skills: {p[4]}", styles["Normal"]))
+
+    content.append(Paragraph(
+        f"Email: {p[2]}",
+        styles["Normal"]
+    ))
+
+    content.append(Paragraph(
+        f"College: {p[3]}",
+        styles["Normal"]
+    ))
+
+    content.append(Paragraph(
+        f"Skills: {p[4]}",
+        styles["Normal"]
+    ))
 
     content.append(Spacer(1, 10))
-    content.append(Paragraph("Certificates", styles["Heading2"]))
+    content.append(Paragraph(
+        "Certificates",
+        styles["Heading2"]
+    ))
 
     for c in certs:
-        if not c[0].strip():  # ✅ FIX 2
+
+        if not c[0].strip():
             continue
-        content.append(Paragraph(f"- {c[0]}", styles["Normal"]))
+
+        content.append(
+            Paragraph(f"- {c[0]}", styles["Normal"])
+        )
 
     doc.build(content)
 
-    return send_file(f"{username}_resume.pdf", as_attachment=True)
-
-# ---------------- DELETE CERTIFICATE ----------------
-@app.route("/api/delete_certificate", methods=["POST"])
-def delete_certificate():
-    data = request.json
-
-    conn = get_db()
-    cursor = conn.cursor()
-
-    cursor.execute(
-        "DELETE FROM certificates WHERE username=? AND name=?",
-        (data["username"], data["name"])
+    return send_file(
+        f"{username}_resume.pdf",
+        as_attachment=True
     )
-
-    conn.commit()
-    conn.close()
-
-    return jsonify({"msg": "deleted"})
 
 
 # ---------------- RUN ----------------
 if __name__ == "__main__":
-    app.run(debug=True, port=8000)
+    app.run(debug=False, port=8000)
