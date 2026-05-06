@@ -174,7 +174,7 @@ elif menu == "Certificates":
             st.write(f"📜 {c['name']} - {c['link']}")
 
         with col2:
-            if st.button("❌", key=c['name']):
+            if st.button("❌", key=f"delete_{c['name']}_{c['link']}"):
                 requests.post(f"{API}/api/delete_certificate", json={
                     "username": st.session_state.user,
                     "name": c["name"]
