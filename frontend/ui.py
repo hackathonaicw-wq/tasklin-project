@@ -106,8 +106,16 @@ if menu == "Profile":
 
     st.title("Profile")
 
-    res = requests.get(f"{API}/api/get_profile/{st.session_state.user}")
-    p = res.json()
+    try:
+        res = requests.get(f"{API}/api/get_profile/{st.session_state.user}")
+
+        if res.text.strip():
+            p = res.json()
+        else:
+            p = {}
+
+    except:
+        p = {}
 
     name = st.text_input("Name", p.get("name", ""))
     email = st.text_input("Email", p.get("email", ""))
@@ -154,9 +162,19 @@ elif menu == "Certificates":
         })
         st.success("Added ✅")
 
-    data = requests.get(
-        f"{API}/api/get_certificates/{st.session_state.user}"
-    ).json()
+    # ✅ FIXED JSON ERROR HERE
+    try:
+        res = requests.get(
+            f"{API}/api/get_certificates/{st.session_state.user}"
+        )
+
+        if res.text.strip():
+            data = res.json()
+        else:
+            data = []
+
+    except:
+        data = []
 
     for c in data:
         col1, col2 = st.columns([4,1])
@@ -181,7 +199,16 @@ elif menu == "Hackathons":
 
     filt = st.radio("Filter", ["All", "Online", "Offline"])
 
-    hacks = requests.get(f"{API}/api/hackathons").json()
+    try:
+        res = requests.get(f"{API}/api/hackathons")
+
+        if res.text.strip():
+            hacks = res.json()
+        else:
+            hacks = []
+
+    except:
+        hacks = []
 
     for h in hacks:
 
@@ -221,9 +248,19 @@ elif menu == "Hackathons":
                 })
                 st.rerun()
 
-        w = requests.get(
-            f"{API}/api/get_waiting/{h['title']}"
-        ).json()
+        # ✅ FIXED WAITING JSON ERROR
+        try:
+            wait_res = requests.get(
+                f"{API}/api/get_waiting/{h['title']}"
+            )
+
+            if wait_res.text.strip():
+                w = wait_res.json()
+            else:
+                w = {"count": 0, "users": []}
+
+        except:
+            w = {"count": 0, "users": []}
 
         st.info(f"👥 {w['count']} people waiting")
 

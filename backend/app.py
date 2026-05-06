@@ -3,6 +3,7 @@ from flask_cors import CORS
 import sqlite3
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
+import os
 
 app = Flask(__name__)
 CORS(app)
@@ -71,7 +72,9 @@ conn.close()
 # ---------------- AUTH ----------------
 @app.route("/api/signup", methods=["POST"])
 def signup():
+
     data = request.json
+
     conn = get_db()
     cursor = conn.cursor()
 
@@ -88,6 +91,7 @@ def signup():
 
 @app.route("/api/login", methods=["POST"])
 def login():
+
     data = request.json
 
     conn = get_db()
@@ -109,6 +113,7 @@ def login():
 # ---------------- PROFILE ----------------
 @app.route("/api/update_profile", methods=["POST"])
 def update_profile():
+
     data = request.json
 
     conn = get_db()
@@ -181,20 +186,29 @@ def add_cert():
 @app.route("/api/get_certificates/<username>")
 def get_certificates(username):
 
-    conn = get_db()
-    cursor = conn.cursor()
+    conn = sqlite3.connect(DB)
+    conn.row_factory = sqlite3.Row
 
-    rows = cursor.execute(
-        "SELECT name, link FROM certificates WHERE username=?",
+    cur = conn.cursor()
+
+    cur.execute(
+        "SELECT * FROM certificates WHERE username=?",
         (username,)
-    ).fetchall()
+    )
+
+    rows = cur.fetchall()
 
     conn.close()
 
-    return jsonify([
-        {"name": r[0], "link": r[1]}
-        for r in rows
-    ])
+    data = []
+
+    for r in rows:
+        data.append({
+            "name": r["name"],
+            "link": r["link"]
+        })
+
+    return jsonify(data)
 
 
 # ---------------- DELETE CERTIFICATE ----------------
@@ -343,38 +357,36 @@ def resume(username):
     cert_html = ""
 
     for c in certs:
-        if not c[0].strip():
-            continue
+        if c[0] and c[0].strip():
+            cert_html += f"<li><a href='{c[1]}'>{c[0]}</a></li>"
 
-        cert_html += f"<li><a href='{c[1]}'>{c[0]}</a></li>"
+    hack_html = ""
 
-    hack_html = "".join([
-        f"<li>{h[0]}</li>"
-        for h in hacks
-    ])
+    for h in hacks:
+        hack_html += f"<li>{h[0]}</li>"
 
-    html = f"""
+    return f"""
     <html>
     <body style="font-family:Arial;padding:40px;">
-        <h1>{p[1]}</h1>
 
-        <p><b>Email:</b> {p[2]}</p>
-        <p><b>College:</b> {p[3]}</p>
-        <p><b>Skills:</b> {p[4]}</p>
+    <h1>{p[1]}</h1>
 
-        <h2>Bio</h2>
-        <p>{p[5]}</p>
+    <p><b>Email:</b> {p[2]}</p>
+    <p><b>College:</b> {p[3]}</p>
+    <p><b>Skills:</b> {p[4]}</p>
 
-        <h2>Certificates</h2>
-        <ul>{cert_html}</ul>
+    <h2>Bio</h2>
+    <p>{p[5]}</p>
 
-        <h2>Hackathons Participated</h2>
-        <ul>{hack_html}</ul>
+    <h2>Certificates</h2>
+    <ul>{cert_html}</ul>
+
+    <h2>Hackathons Participated</h2>
+    <ul>{hack_html}</ul>
+
     </body>
     </html>
     """
-
-    return html
 
 
 # ---------------- RESUME PDF ----------------
@@ -396,6 +408,9 @@ def resume_pdf(username):
 
     conn.close()
 
+    if not p:
+        return "No profile found"
+
     doc = SimpleDocTemplate(f"{username}_resume.pdf")
 
     styles = getSampleStyleSheet()
@@ -405,35 +420,31 @@ def resume_pdf(username):
     content.append(Paragraph(p[1], styles["Title"]))
     content.append(Spacer(1, 10))
 
-    content.append(Paragraph(
-        f"Email: {p[2]}",
-        styles["Normal"]
-    ))
+    content.append(
+        Paragraph(f"Email: {p[2]}", styles["Normal"])
+    )
 
-    content.append(Paragraph(
-        f"College: {p[3]}",
-        styles["Normal"]
-    ))
+    content.append(
+        Paragraph(f"College: {p[3]}", styles["Normal"])
+    )
 
-    content.append(Paragraph(
-        f"Skills: {p[4]}",
-        styles["Normal"]
-    ))
+    content.append(
+        Paragraph(f"Skills: {p[4]}", styles["Normal"])
+    )
 
     content.append(Spacer(1, 10))
-    content.append(Paragraph(
-        "Certificates",
-        styles["Heading2"]
-    ))
+
+    content.append(
+        Paragraph("Certificates", styles["Heading2"])
+    )
 
     for c in certs:
 
-        if not c[0].strip():
-            continue
+        if c[0] and c[0].strip():
 
-        content.append(
-            Paragraph(f"- {c[0]}", styles["Normal"])
-        )
+            content.append(
+                Paragraph(f"- {c[0]}", styles["Normal"])
+            )
 
     doc.build(content)
 
