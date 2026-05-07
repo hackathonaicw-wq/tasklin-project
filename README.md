@@ -62,4 +62,11 @@ tasklin-project/
 
 ```bash
 cd backend
+python fetch.py
 python app.py
+
+### Start Frontend
+
+```bash
+cd frontend
+streamlit run ui.py
