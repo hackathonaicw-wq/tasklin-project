@@ -72,20 +72,34 @@ conn.close()
 @app.route("/api/signup", methods=["POST"])
 def signup():
 
-    data = request.json
+    try:
+        data = request.json
 
-    conn = get_db()
-    cursor = conn.cursor()
+        conn = get_db()
+        cursor = conn.cursor()
 
-    cursor.execute(
-        "INSERT INTO users VALUES (?, ?)",
-        (data["username"], data["password"])
-    )
+        # check if user already exists
+        existing = cursor.execute(
+            "SELECT * FROM users WHERE username=?",
+            (data["username"],)
+        ).fetchone()
 
-    conn.commit()
-    conn.close()
+        if existing:
+            conn.close()
+            return jsonify({"msg": "user exists"}), 400
 
-    return jsonify({"msg": "ok"})
+        cursor.execute(
+            "INSERT INTO users (username, password) VALUES (?, ?)",
+            (data["username"], data["password"])
+        )
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({"msg": "signup success"}), 201
+
+    except Exception as e:
+        return jsonify({"msg": str(e)}), 500
 
 
 @app.route("/api/login", methods=["POST"])
@@ -515,3 +529,4 @@ def resume_pdf(username):
 # ---------------- RUN ----------------
 if __name__ == "__main__":
     app.run(debug=False, port=8000)
+    

@@ -78,7 +78,7 @@ if not st.session_state.user:
                 "password": pwd
             })
 
-            if r.status_code == 200:
+            if r.status_code in [200,201]:
                 st.session_state.user = user
                 st.rerun()
             else:
